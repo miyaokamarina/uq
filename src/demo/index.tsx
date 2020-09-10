@@ -1,6 +1,6 @@
 import React, { useCallback } from 'react';
 import { render } from 'react-dom';
-import { Uq, useFileChangeHandler, useUq } from '..';
+import { Uq, useUq } from '..';
 
 const Progress = ({ active, progress }: { readonly active: boolean; readonly progress: number }) => {
     if (!active) return null;
@@ -39,9 +39,7 @@ const Actions = ({ uq, id, status }: { readonly uq: Uq; readonly id: number; rea
 };
 
 const App = () => {
-    const [items, progress, active, uq] = useUq('http://127.0.0.1:12310/');
-
-    const handleChange = useFileChangeHandler(uq);
+    const [items, progress, active, handleChange, uq] = useUq('http://127.0.0.1:12310/');
 
     return (
         <section>

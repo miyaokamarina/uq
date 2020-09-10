@@ -1,6 +1,6 @@
 {
     "name": "@miyaokamarina/uq",
-    "version": "0.0.2",
+    "version": "0.0.4",
     "description": "React-friendly file upload queue.",
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
@@ -8,7 +8,8 @@
     "author": "Marina Miyaoka <miyaokamarina@gmail.com> (https://twitter.com/miyaokamarina)",
     "license": "MIT",
     "scripts": {
-        "build": "./build.sh"
+        "build": "./build.sh",
+        "demo": "concurrently 'webpack-dev-server --mode development' 'node ./src/demo/server.js'"
     },
     "dependencies": {
         "core-js": "^3.6.5",

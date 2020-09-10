@@ -256,8 +256,10 @@ const _ = new WeakMap<Uq, Private>();
  * File upload queue on steroids.
  */
 export class Uq extends EventTarget {
-    constructor(url: string, field = 'file', concurrency = 4) {
+    constructor(url: string, options = {} as Uq.Options) {
         super();
+
+        const { field = 'file', concurrency = 4 } = options;
 
         _.set(this, {
             items: [],
@@ -562,14 +564,43 @@ export namespace Uq {
         readonly abort: Uq.AbortEvent;
         readonly finish: Uq.FinishEvent;
     }
+
+    /**
+     * Uq options insterface.
+     */
+    export interface Options {
+        /**
+         * Upload `FormData` field name. Defaults to `'file'`.
+         */
+        readonly field?: string;
+
+        /**
+         * Maximum number of simultaneous uploads. Defaults to `4`.
+         */
+        readonly concurrency?: number;
+    }
 }
 
-export function useUq(url: string, field = 'file', concurrency = 4) {
-    const uq = useMemo(() => new Uq(url, field, concurrency), [url, field, concurrency]);
+/**
+ * Takes UQ options, returns a tuple of current state values (`items`, `progress`, `active`), pre-configured file change handler, and the UQ instance.
+ */
+export function useUq(url: string, options = {} as Uq.Options) {
+    const { field, concurrency } = options;
+
+    const uq = useMemo(() => new Uq(url, { field, concurrency }), [url, field, concurrency]);
 
     const [items, setItems] = useState<readonly Uq.Item[]>([]);
     const [progress, setProgress] = useState(0);
     const [active, setActive] = useState(false);
+
+    const handleChange = useCallback(
+        (event: ChangeEvent) => {
+            const input = event.target as HTMLInputElement;
+
+            uq.push(input.files);
+        },
+        [uq],
+    );
 
     useEffect(() => {
         const handleChange = ({ items, progress, active }: Uq.ChangeEvent) => {
@@ -585,16 +616,5 @@ export function useUq(url: string, field = 'file', concurrency = 4) {
         };
     }, [uq]);
 
-    return [items, progress, active, uq] as const;
+    return [items, progress, active, handleChange, uq] as const;
 }
-
-export function useFileChangeHandler(uq: Uq) {
-    return useCallback(
-        (event: ChangeEvent) => {
-            const input = event.target as HTMLInputElement;
-
-            uq.push(input.files);
-        },
-        [uq],
-    );
-};
