@@ -22,5 +22,5 @@
         "declaration": true
     },
     "include": ["./src/**/*"],
-    "exclude": ["./node_modules", "./dist", "./target", "./temp"]
+    "exclude": ["./node_modules", "./dist", "./target", "./temp", "./src/demo"]
 }
