@@ -16,7 +16,7 @@ interface Secret {
     readonly onabort: { (): void } | null;
 }
 
-interface Private {
+interface Private<r = Response> {
     items: readonly Uq.Item[];
 
     readonly secrets: WeakMap<Uq.Item, Secret>;
@@ -61,7 +61,7 @@ const calculateProgress = (total: number, loaded: number): number => {
 // endregion Private helpers
 
 // region Private list operations
-const map = (uq: Uq, f: (item: Uq.Item, secret: Secret) => readonly [Uq.Item, Secret]) => {
+const map = <r = Response>(uq: Uq<r>, f: (item: Uq.Item, secret: Secret) => readonly [Uq.Item, Secret]) => {
     const __ = _.get(uq)!;
 
     __.items = __.items.map(item => {
@@ -75,11 +75,11 @@ const map = (uq: Uq, f: (item: Uq.Item, secret: Secret) => readonly [Uq.Item, Se
     });
 };
 
-const update = (uq: Uq, id: number, f: (item: Uq.Item, secret: Secret) => readonly [Uq.Item, Secret]) => {
+const update = <r = Response>(uq: Uq<r>, id: number, f: (item: Uq.Item, secret: Secret) => readonly [Uq.Item, Secret]) => {
     map(uq, (item, secret) => (item.id === id ? f(item, secret) : [item, secret]));
 };
 
-const find = (uq: Uq, id: number): Uq.Item => {
+const find = <r = Response>(uq: Uq<r>, id: number): Uq.Item => {
     return _.get(uq)!.items.find(item => item.id === id)!;
 };
 
@@ -88,7 +88,7 @@ const filterPending = (item: Uq.Item) => item.status === Uq.Status.Pending;
 // endregion Private list operations
 
 // region Private logic
-const triggerChange = (uq: Uq) => {
+const triggerChange = <r>(uq: Uq<r>) => {
     const __ = _.get(uq)!;
 
     const unflushed = __.items.filter(item => !__.secrets.get(item)!.flushed);
@@ -108,7 +108,7 @@ const triggerChange = (uq: Uq) => {
     uq.dispatchEvent(new Uq.ChangeEvent(__.items, progress, active));
 };
 
-const tick = (uq: Uq) => {
+const tick = <r = Response>(uq: Uq<r>) => {
     const __ = _.get(uq)!;
 
     __.items
@@ -118,7 +118,7 @@ const tick = (uq: Uq) => {
         .forEach(item => send(uq, item));
 };
 
-const send = (uq: Uq, item: Uq.Item) => {
+const send = <r = Response>(uq: Uq<r>, item: Uq.Item) => {
     const { id, file } = item;
     const __ = _.get(uq)!;
 
@@ -260,13 +260,13 @@ const send = (uq: Uq, item: Uq.Item) => {
 };
 // endregion Private logic
 
-const _ = new WeakMap<Uq, Private>();
+const _ = new WeakMap<Uq<any>, Private<any>>();
 
 /**
  * File upload queue on steroids.
  */
 export class Uq<r = Response> extends EventTarget {
-    constructor(url: string, options = {} as Uq.Options) {
+    constructor(url: string, options = {} as Uq.Options<r>) {
         super();
 
         const { field = 'file', concurrency = 4, onResponse } = options;
@@ -503,7 +503,7 @@ export namespace Uq {
     /**
      * Upload item success event.
      */
-    export class DoneEvent extends Event {
+    export class DoneEvent<r = Response> extends Event {
         /**
          * An item just completed.
          */
@@ -512,9 +512,9 @@ export namespace Uq {
         /**
          * Server response object.
          */
-        readonly response: Response;
+        readonly response: r;
 
-        constructor(item: Uq.Item, response: Response) {
+        constructor(item: Uq.Item, response: r) {
             super('done');
 
             this.item = item;
