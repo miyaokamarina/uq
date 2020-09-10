@@ -68,7 +68,7 @@ const App = () => {
                             <td>{item.file.name}</td>
                             <td>{item.file.size}</td>
                             <td>
-                                <Actions uq={uq} id={item.id} status={item.status} />
+                                <Actions uq={uq!} id={item.id} status={item.status} />
                             </td>
                         </tr>
                     ))}
