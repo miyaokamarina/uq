@@ -382,7 +382,7 @@ export class Uq extends EventTarget {
         if (!item) return;
         if (!(item.status & Uq.Status.Failed)) return;
 
-        update(this, item.id, (item, secret) => [{ ...item, status: Uq.Status.Pending }, secret]);
+        update(this, item.id, (item, secret) => [{ ...item, status: Uq.Status.Pending }, { ...secret, flushed: false }]);
 
         triggerChange(this);
         tick(this);
@@ -584,10 +584,10 @@ export namespace Uq {
 /**
  * Takes UQ options, returns a tuple of current state values (`items`, `progress`, `active`), pre-configured file change handler, and the UQ instance.
  */
-export function useUq(url: string, options = {} as Uq.Options) {
+export function useUq(url: string | null, options = {} as Uq.Options) {
     const { field, concurrency } = options;
 
-    const uq = useMemo(() => new Uq(url, { field, concurrency }), [url, field, concurrency]);
+    const uq = useMemo(() => url === null ? null : new Uq(url, { field, concurrency }), [url, field, concurrency]);
 
     const [items, setItems] = useState<readonly Uq.Item[]>([]);
     const [progress, setProgress] = useState(0);
@@ -595,6 +595,8 @@ export function useUq(url: string, options = {} as Uq.Options) {
 
     const handleChange = useCallback(
         (event: ChangeEvent) => {
+            if (!uq) return;
+
             const input = event.target as HTMLInputElement;
 
             uq.push(input.files);
@@ -603,6 +605,8 @@ export function useUq(url: string, options = {} as Uq.Options) {
     );
 
     useEffect(() => {
+        if (!uq) return;
+
         const handleChange = ({ items, progress, active }: Uq.ChangeEvent) => {
             setItems(items);
             setProgress(progress);
