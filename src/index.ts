@@ -604,9 +604,11 @@ export namespace Uq {
  * Takes UQ options, returns a tuple of current state values (`items`, `progress`, `active`), pre-configured file change handler, and the UQ instance.
  */
 export function useUq<r = Response>(url: string | null, options = {} as Uq.Options<r>) {
-    const { field, concurrency } = options;
+    const { field, concurrency, onResponse } = options;
 
-    const uq = useMemo(() => (url === null ? null : new Uq(url, { field, concurrency })), [url, field, concurrency]);
+    const uq = useMemo(() => {
+        return url === null ? null : new Uq(url, { field, concurrency, onResponse });
+    }, [url, field, concurrency, onResponse]);
 
     const [items, setItems] = useState<readonly Uq.Item[]>([]);
     const [progress, setProgress] = useState(0);
