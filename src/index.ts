@@ -1,4 +1,5 @@
-// TODO: Retry support.
+import { useMemo, useState, useEffect, useCallback, ChangeEvent } from 'react';
+
 // TODO: Batch upload.
 // TODO: Batch abort/remove/clear/retry.
 // TODO: Relative paths support.
@@ -165,7 +166,7 @@ const send = (uq: Uq, item: Uq.Item) => {
                     },
                     {
                         ...secret,
-                        flushed,
+                        flushed: Boolean(status & Uq.Status.Failed) || flushed,
                         xhr: null,
                         onprogress: null,
                         onload: null,
@@ -366,6 +367,25 @@ export class Uq extends EventTarget {
         tick(this);
     }
 
+    /**
+     * Retries uploading of failed item.
+     *
+     * @param item Item or item identifer to retry.
+     */
+    retry(item?: number | Uq.Item | undefined) {
+        if (item == null) return;
+
+        item = find(this, typeof item === 'number' ? item : item.id);
+
+        if (!item) return;
+        if (!(item.status & Uq.Status.Failed)) return;
+
+        update(this, item.id, (item, secret) => [{ ...item, status: Uq.Status.Pending }, secret]);
+
+        triggerChange(this);
+        tick(this);
+    }
+
     addEventListener<t extends keyof Uq.EventMap>(t: t, h: (this: Uq, _: Uq.EventMap[t]) => any, o?: boolean | AddEventListenerOptions): void;
     addEventListener(t: string, h: EventListenerOrEventListenerObject | null, o?: boolean | AddEventListenerOptions): void;
     addEventListener(t: string, h: EventListenerOrEventListenerObject | null, o?: boolean | AddEventListenerOptions): void {
@@ -391,6 +411,7 @@ export namespace Uq {
         Done /*       */ = 0b001_00,
         Error /*      */ = 0b010_00,
         Aborted /*    */ = 0b100_00,
+        Failed /*     */ = 0b110_00,
         Finished /*   */ = 0b111_00,
     }
 
@@ -542,3 +563,38 @@ export namespace Uq {
         readonly finish: Uq.FinishEvent;
     }
 }
+
+export function useUq(url: string, field = 'file', concurrency = 4) {
+    const uq = useMemo(() => new Uq(url, field, concurrency), [url, field, concurrency]);
+
+    const [items, setItems] = useState<readonly Uq.Item[]>([]);
+    const [progress, setProgress] = useState(0);
+    const [active, setActive] = useState(false);
+
+    useEffect(() => {
+        const handleChange = ({ items, progress, active }: Uq.ChangeEvent) => {
+            setItems(items);
+            setProgress(progress);
+            setActive(active);
+        };
+
+        uq.addEventListener('change', handleChange);
+
+        return () => {
+            uq.removeEventListener('change', handleChange);
+        };
+    }, [uq]);
+
+    return [items, progress, active, uq] as const;
+}
+
+export function useFileChangeHandler(uq: Uq) {
+    return useCallback(
+        (event: ChangeEvent) => {
+            const input = event.target as HTMLInputElement;
+
+            uq.push(input.files);
+        },
+        [uq],
+    );
+};

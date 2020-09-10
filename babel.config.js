@@ -4,14 +4,16 @@ module.exports = {
         [
             '@babel/env',
             {
-                targets: [
-                    '> 2%',
-                    'not dead',
-                    'not ie <= 11'
-                ],
+                targets: ['> 2%', 'not dead', 'not ie <= 11'],
                 useBuiltIns: 'usage',
                 corejs: 3,
                 shippedProposals: true,
+            },
+        ],
+        [
+            '@babel/preset-react',
+            {
+                runtime: 'classic',
             },
         ],
     ],
