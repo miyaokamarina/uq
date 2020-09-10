@@ -23,6 +23,7 @@ interface Private {
     readonly url: string;
     readonly field: string;
     readonly concurrency: number;
+    readonly onResponse?: (_: Response) => readonly [Uq.Status.Done, r] | readonly [Uq.Status.Error, unknown?];
 }
 // endregion Private types
 
@@ -151,6 +152,24 @@ const send = (uq: Uq, item: Uq.Item) => {
         const unfinished = __.items.filter(filterUnfinished);
         const flushed = unfinished.length <= 1;
 
+        let response: Response;
+
+        if (status === Uq.Status.Done && __.onResponse) {
+            response = new Response(xhr.response, {
+                status: xhr.status,
+                statusText: xhr.statusText,
+                headers: parseHeaders(xhr),
+            });
+
+            const processed = __.onResponse(response);
+
+            if (processed[0] === Uq.Status.Error) {
+                status = Uq.Status.Error;
+            } else {
+                response = processed[1];
+            }
+        }
+
         map(uq, (item, secret) => {
             if (item.id !== id) {
                 if (flushed && !secret.flushed) {
@@ -183,16 +202,7 @@ const send = (uq: Uq, item: Uq.Item) => {
         const item = find(uq, id);
 
         if (status === Uq.Status.Done) {
-            uq.dispatchEvent(
-                new Uq.DoneEvent(
-                    item,
-                    new Response(xhr.response, {
-                        status: xhr.status,
-                        statusText: xhr.statusText,
-                        headers: parseHeaders(xhr),
-                    }),
-                ),
-            );
+            uq.dispatchEvent(new Uq.DoneEvent(item, response!));
         } else if (status === Uq.Status.Error) {
             uq.dispatchEvent(new Uq.ErrorEvent(item));
         } else {
@@ -255,11 +265,11 @@ const _ = new WeakMap<Uq, Private>();
 /**
  * File upload queue on steroids.
  */
-export class Uq extends EventTarget {
+export class Uq<r = Response> extends EventTarget {
     constructor(url: string, options = {} as Uq.Options) {
         super();
 
-        const { field = 'file', concurrency = 4 } = options;
+        const { field = 'file', concurrency = 4, onResponse } = options;
 
         _.set(this, {
             items: [],
@@ -267,6 +277,7 @@ export class Uq extends EventTarget {
             url,
             field,
             concurrency,
+            onResponse,
         });
     }
 
@@ -382,7 +393,10 @@ export class Uq extends EventTarget {
         if (!item) return;
         if (!(item.status & Uq.Status.Failed)) return;
 
-        update(this, item.id, (item, secret) => [{ ...item, status: Uq.Status.Pending }, { ...secret, flushed: false }]);
+        update(this, item.id, (item, secret) => [
+            { ...item, status: Uq.Status.Pending },
+            { ...secret, flushed: false },
+        ]);
 
         triggerChange(this);
         tick(this);
@@ -568,7 +582,7 @@ export namespace Uq {
     /**
      * Uq options insterface.
      */
-    export interface Options {
+    export interface Options<r = Response> {
         /**
          * Upload `FormData` field name. Defaults to `'file'`.
          */
@@ -578,16 +592,21 @@ export namespace Uq {
          * Maximum number of simultaneous uploads. Defaults to `4`.
          */
         readonly concurrency?: number;
+
+        /**
+         * Response handler allowing to transform erroneous “successful” result into errors.
+         */
+        readonly onResponse?: (_: Response) => readonly [Uq.Status.Done, r] | readonly [Uq.Status.Error, unknown?];
     }
 }
 
 /**
  * Takes UQ options, returns a tuple of current state values (`items`, `progress`, `active`), pre-configured file change handler, and the UQ instance.
  */
-export function useUq(url: string | null, options = {} as Uq.Options) {
+export function useUq<r = Response>(url: string | null, options = {} as Uq.Options<r>) {
     const { field, concurrency } = options;
 
-    const uq = useMemo(() => url === null ? null : new Uq(url, { field, concurrency }), [url, field, concurrency]);
+    const uq = useMemo(() => (url === null ? null : new Uq(url, { field, concurrency })), [url, field, concurrency]);
 
     const [items, setItems] = useState<readonly Uq.Item[]>([]);
     const [progress, setProgress] = useState(0);
