@@ -13,12 +13,12 @@ const server = http.createServer((req, res) => {
         return;
     }
 
-    if (Math.random() > 0.33) {
+    if (Math.random() > 1 / 3) {
         req.destroy();
         res.writeHead(500);
         res.end();
     } else {
-        res.writeHead(Math.random() > 1 / 3 ? 200 : 500);
+        res.writeHead(Math.random() > 2 / 3 ? 200 : 500);
         res.end();
     }
 });
