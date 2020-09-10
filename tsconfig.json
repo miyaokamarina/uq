@@ -1,0 +1,26 @@
+{
+    "compilerOptions": {
+        "target": "esnext",
+        "module": "esnext",
+        "newLine": "lf",
+        "strict": true,
+        "noUnusedLocals": true,
+        "noUnusedParameters": true,
+        "noImplicitReturns": true,
+        "moduleResolution": "node",
+        "esModuleInterop": true,
+        "forceConsistentCasingInFileNames": true,
+        "jsx": "preserve",
+        "sourceMap": true,
+        "preserveConstEnums": false,
+        "isolatedModules": false,
+        "baseUrl": ".",
+        "paths": {
+            "~/*": ["./src/*"]
+        },
+        "outDir": "./target",
+        "declaration": true
+    },
+    "include": ["./src/**/*"],
+    "exclude": ["./node_modules", "./dist", "./target", "./temp"]
+}

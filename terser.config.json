@@ -1,0 +1,22 @@
+{
+    "ecma": 8,
+    "toplevel": true,
+    "compress": {
+        "arguments": true,
+        "keep_fargs": false,
+        "passes": 6,
+        "toplevel": true,
+        "pure_getters": true,
+        "unsafe_arrows": true,
+        "unsafe_math": true,
+        "unsafe_comps": true,
+        "unsafe_Function": true,
+        "unsafe_methods": true,
+        "unsafe_proto": true,
+        "unsafe_undefined": true,
+        "unsafe": true
+    },
+    "output": {
+        "max_line_len": 160
+    }
+}
