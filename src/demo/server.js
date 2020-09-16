@@ -13,13 +13,28 @@ const server = http.createServer((req, res) => {
         return;
     }
 
-    if (Math.random() > 1 / 3) {
-        req.destroy();
-        res.writeHead(500);
-        res.end();
-    } else {
-        res.writeHead(Math.random() > 2 / 3 ? 200 : 500);
-        res.end();
+    const test = Math.round((Math.random() - Number.EPSILON) * 3 + 0.5);
+
+    switch (test) {
+        case 1: {
+            req.destroy();
+            res.writeHead(500);
+            res.end();
+
+            return;
+        }
+        case 2: {
+            res.writeHead(500);
+            res.end();
+
+            return;
+        }
+        case 3: {
+            res.writeHead(200);
+            res.end();
+
+            return;
+        }
     }
 });
 

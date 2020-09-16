@@ -1,31 +1,8 @@
-import { useMemo, useState, useEffect, useCallback, ChangeEvent } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 
 // TODO: Batch upload.
 // TODO: Batch abort/remove/clear/retry.
 // TODO: Relative paths support.
-
-// region Private types
-interface Secret {
-    readonly flushed: boolean;
-    readonly total: number;
-    readonly loaded: number;
-    readonly xhr: XMLHttpRequest | null;
-    readonly onprogress: { (event: ProgressEvent): void } | null;
-    readonly onload: { (): void } | null;
-    readonly onerror: { (): void } | null;
-    readonly onabort: { (): void } | null;
-}
-
-interface Private<r = Response> {
-    items: readonly Uq.Item[];
-
-    readonly secrets: WeakMap<Uq.Item, Secret>;
-    readonly url: string;
-    readonly field: string;
-    readonly concurrency: number;
-    readonly onResponse?: (_: Response) => readonly [Uq.Status.Done, r] | readonly [Uq.Status.Error, unknown?];
-}
-// endregion Private types
 
 // region Private helpers
 const parseHeader = (src: string) => {
@@ -61,224 +38,28 @@ const calculateProgress = (total: number, loaded: number): number => {
 // endregion Private helpers
 
 // region Private list operations
-const map = <r = Response>(uq: Uq<r>, f: (item: Uq.Item, secret: Secret) => readonly [Uq.Item, Secret]) => {
-    const __ = _.get(uq)!;
-
-    __.items = __.items.map(item => {
-        const secret = __.secrets.get(item)!;
-
-        const [updatedItem, updatedSecret] = f(item, secret);
-
-        __.secrets.set(updatedItem, updatedSecret);
-
-        return updatedItem;
-    });
-};
-
-const update = <r = Response>(uq: Uq<r>, id: number, f: (item: Uq.Item, secret: Secret) => readonly [Uq.Item, Secret]) => {
-    map(uq, (item, secret) => (item.id === id ? f(item, secret) : [item, secret]));
-};
-
-const find = <r = Response>(uq: Uq<r>, id: number): Uq.Item => {
-    return _.get(uq)!.items.find(item => item.id === id)!;
-};
-
 const filterUnfinished = (item: Uq.Item) => item.status & Uq.Status.Unfinished;
 const filterPending = (item: Uq.Item) => item.status === Uq.Status.Pending;
 // endregion Private list operations
-
-// region Private logic
-const triggerChange = <r>(uq: Uq<r>) => {
-    const __ = _.get(uq)!;
-
-    const unflushed = __.items.filter(item => !__.secrets.get(item)!.flushed);
-    const active = Boolean(unflushed.length);
-
-    const [total, loaded] = unflushed.reduce(
-        ([total, loaded], item) => {
-            const secret = __.secrets.get(item)!;
-
-            return [total + secret.total, loaded + secret.loaded];
-        },
-        [0, 0] as readonly [number, number],
-    );
-
-    const progress = calculateProgress(total, loaded);
-
-    uq.dispatchEvent(new Uq.ChangeEvent(__.items, progress, active));
-};
-
-const tick = <r = Response>(uq: Uq<r>) => {
-    const __ = _.get(uq)!;
-
-    __.items
-        .filter(filterUnfinished)
-        .slice(0, __.concurrency)
-        .filter(filterPending)
-        .forEach(item => send(uq, item));
-};
-
-const send = <r = Response>(uq: Uq<r>, item: Uq.Item) => {
-    const { id, file } = item;
-    const __ = _.get(uq)!;
-
-    // Prepare the XHR:
-    const xhr = new XMLHttpRequest();
-
-    xhr.open('POST', __.url);
-
-    xhr.responseType = 'arraybuffer';
-
-    // Set up event handlers:
-    const onprogress = ({ total, loaded }: ProgressEvent) => {
-        const progress = calculateProgress(total, loaded);
-
-        update(uq, id, (item, secret) => [
-            { ...item, progress },
-            { ...secret, total, loaded },
-        ]);
-
-        triggerChange(uq);
-        uq.dispatchEvent(new Uq.ProgressEvent(find(uq, id)));
-    };
-
-    const onfinish = (status: Uq.Status) => {
-        xhr.upload.removeEventListener('progress', onprogress);
-        xhr.removeEventListener('load', onload);
-        xhr.removeEventListener('error', onerror);
-        xhr.removeEventListener('abort', onabort);
-
-        // Update status and flush state:
-        const unfinished = __.items.filter(filterUnfinished);
-        const flushed = unfinished.length <= 1;
-
-        let response: Response;
-
-        if (status === Uq.Status.Done && __.onResponse) {
-            response = new Response(xhr.response, {
-                status: xhr.status,
-                statusText: xhr.statusText,
-                headers: parseHeaders(xhr),
-            });
-
-            const processed = __.onResponse(response);
-
-            if (processed[0] === Uq.Status.Error) {
-                status = Uq.Status.Error;
-            } else {
-                response = processed[1];
-            }
-        }
-
-        map(uq, (item, secret) => {
-            if (item.id !== id) {
-                if (flushed && !secret.flushed) {
-                    return [item, { ...secret, flushed }];
-                } else {
-                    return [item, secret];
-                }
-            } else {
-                return [
-                    {
-                        ...item,
-                        status,
-                    },
-                    {
-                        ...secret,
-                        flushed: Boolean(status & Uq.Status.Failed) || flushed,
-                        xhr: null,
-                        onprogress: null,
-                        onload: null,
-                        onerror: null,
-                        onabort: null,
-                    },
-                ];
-            }
-        });
-
-        // Trigger events:
-        triggerChange(uq);
-
-        const item = find(uq, id);
-
-        if (status === Uq.Status.Done) {
-            uq.dispatchEvent(new Uq.DoneEvent(item, response!));
-        } else if (status === Uq.Status.Error) {
-            uq.dispatchEvent(new Uq.ErrorEvent(item));
-        } else {
-            uq.dispatchEvent(new Uq.AbortEvent(item));
-        }
-
-        uq.dispatchEvent(new Uq.FinishEvent(item));
-
-        // Trigger iteration:
-        tick(uq);
-    };
-
-    const onload = () => {
-        onfinish(Uq.Status.Done);
-    };
-
-    const onerror = () => {
-        onfinish(Uq.Status.Error);
-    };
-
-    const onabort = () => {
-        onfinish(Uq.Status.Aborted);
-    };
-
-    xhr.upload.addEventListener('progress', onprogress);
-    xhr.addEventListener('load', onload);
-    xhr.addEventListener('error', onerror);
-    xhr.addEventListener('abort', onabort);
-
-    // Build and send form data:
-    const body = new FormData();
-
-    body.append(__.field, file);
-
-    xhr.send(body);
-
-    // Update item status and private properties:
-    update(uq, id, (item, secret) => [
-        {
-            ...item,
-            status: Uq.Status.Ongoing,
-        },
-        {
-            ...secret,
-            xhr,
-            onprogress,
-            onload,
-            onerror,
-            onabort,
-        },
-    ]);
-
-    // Trigger the `change` event:
-    triggerChange(uq);
-};
-// endregion Private logic
-
-const _ = new WeakMap<Uq<any>, Private<any>>();
 
 /**
  * File upload queue on steroids.
  */
 export class Uq<r = Response> extends EventTarget {
-    constructor(url: string, options = {} as Uq.Options<r>) {
+    private items: readonly Uq.Item[] = [];
+
+    private readonly field: string;
+    private readonly concurrency: number;
+    private readonly onResponse?: (_: Response) => readonly [Uq.Status.Done, r] | readonly [Uq.Status.Error, unknown?];
+
+    constructor(options = {} as Uq.Options<r>) {
         super();
 
         const { field = 'file', concurrency = 4, onResponse } = options;
 
-        _.set(this, {
-            items: [],
-            secrets: new WeakMap(),
-            url,
-            field,
-            concurrency,
-            onResponse,
-        });
+        this.field = field;
+        this.concurrency = concurrency;
+        this.onResponse = onResponse;
     }
 
     /**
@@ -286,120 +67,250 @@ export class Uq<r = Response> extends EventTarget {
      *
      * @param files Item or items to add.
      */
-    push(files?: File | Iterable<File> | null) {
-        if (!files) return;
+    push(file: File, url: string) {
+        this.items = this.items.concat({
+            id: Math.random(),
+            file,
+            status: Uq.Status.Pending,
+            progress: 0,
+            url,
 
-        const __ = _.get(this)!;
+            flushed: false,
+            total: file.size,
+            loaded: 0,
+            xhr: null,
+            onprogress: null,
+            onload: null,
+            onerror: null,
+            onabort: null,
+        });
 
-        files = files instanceof File ? [files] : files;
-
-        __.items = __.items.concat(
-            Array.from(files, file => {
-                const item: Uq.Item = {
-                    id: Math.random(),
-                    file,
-                    status: Uq.Status.Pending,
-                    progress: 0,
-                };
-
-                __.secrets.set(item, {
-                    flushed: false,
-                    total: file.size,
-                    loaded: 0,
-                    xhr: null,
-                    onprogress: null,
-                    onload: null,
-                    onerror: null,
-                    onabort: null,
-                });
-
-                return item;
-            }),
-        );
-
-        triggerChange(this);
-        tick(this);
+        this.triggerChange();
+        this.tick();
     }
 
     /**
      * Aborts item uploading without removeing from the queue. Implicitly triggers the `abort` event.
      *
-     * @param item Item or item identifer to abort.
+     * @param id An identifier of the item to abort.
      */
-    abort(item?: number | Uq.Item | undefined) {
-        if (item == null) return;
-
-        item = find(this, typeof item === 'number' ? item : item.id);
+    abort(id: number) {
+        const item = this.find(id);
 
         if (!item) return;
 
-        const __ = _.get(this)!;
-        const secret = __.secrets.get(item)!;
-
-        if (!secret.xhr) {
-            if (item.status === Uq.Status.Pending) {
-                update(this, item.id, (item, secret) => [{ ...item, status: Uq.Status.Aborted }, secret]);
-            }
-        } else {
-            secret.xhr.abort();
+        if (item.xhr) {
+            item.xhr.abort();
+        } else if (item.status === Uq.Status.Pending) {
+            this.update(item.id, item => ({ ...item, status: Uq.Status.Aborted }));
         }
 
-        triggerChange(this);
-        tick(this);
+        this.triggerChange();
+        this.tick();
     }
 
     /**
      * Unlike {@link Uq.abort}, removes an item silently, without triggering the `abort` event.
      *
-     * @param item  Item or item identifer to silently remove from the queue.
+     * @param id An identifier of the item to silently remove from the queue.
      */
-    remove(item?: number | Uq.Item | undefined) {
-        if (item == null) return;
-
-        item = find(this, typeof item === 'number' ? item : item.id);
+    remove(id: number) {
+        const item = this.find(id);
 
         if (!item) return;
 
-        const __ = _.get(this)!;
-        const secret = __.secrets.get(item)!;
+        if (item.xhr) {
+            item.xhr.upload.removeEventListener('progress', item.onprogress!);
+            item.xhr.removeEventListener('load', item.onload!);
+            item.xhr.removeEventListener('error', item.onerror!);
+            item.xhr.removeEventListener('abort', item.onabort!);
 
-        if (secret.xhr) {
-            secret.xhr.upload.removeEventListener('progress', secret.onprogress!);
-            secret.xhr.removeEventListener('load', secret.onload!);
-            secret.xhr.removeEventListener('error', secret.onerror!);
-            secret.xhr.removeEventListener('abort', secret.onabort!);
-
-            secret.xhr.abort();
+            item.xhr.abort();
         }
 
-        const { id } = item;
+        this.items = this.items.filter(item => item.id !== id);
 
-        __.items = __.items.filter(item => item.id !== id);
-
-        triggerChange(this);
-        tick(this);
+        this.triggerChange();
+        this.tick();
     }
 
     /**
      * Retries uploading of failed item.
      *
-     * @param item Item or item identifer to retry.
+     * @param id An identifier of the item to retry.
      */
-    retry(item?: number | Uq.Item | undefined) {
-        if (item == null) return;
+    retry(id: number) {
+        const item = this.find(id);
 
-        item = find(this, typeof item === 'number' ? item : item.id);
+        if (!item || !(item.status & Uq.Status.Failed)) return;
 
-        if (!item) return;
-        if (!(item.status & Uq.Status.Failed)) return;
+        this.update(id, item => ({ ...item, status: Uq.Status.Pending, flushed: false }));
 
-        update(this, item.id, (item, secret) => [
-            { ...item, status: Uq.Status.Pending },
-            { ...secret, flushed: false },
-        ]);
+        this.triggerChange();
+        this.tick();
+    }
 
-        triggerChange(this);
-        tick(this);
+    private find(id: number): Uq.Item | undefined {
+        return this.items.find(item => item.id === id);
+    }
+
+    private map(map: (item: Uq.Item) => Uq.Item) {
+        this.items = this.items.map(map);
+    }
+
+    private update(id: number, map: (item: Uq.Item) => Uq.Item) {
+        this.map(item => (item.id === id ? map(item) : item));
+    }
+
+    private triggerChange() {
+        const unflushed = this.items.filter(item => !item.flushed);
+        const active = Boolean(unflushed.length);
+
+        const [total, loaded] = unflushed.reduce(([total, loaded], item) => [total + item.total, loaded + item.loaded], [0, 0] as readonly [number, number]);
+
+        const progress = calculateProgress(total, loaded);
+
+        this.dispatchEvent(new Uq.UqChangeEvent(this.items, progress, active));
+    }
+
+    private tick() {
+        this.items
+            .filter(filterUnfinished)
+            .slice(0, this.concurrency)
+            .filter(filterPending)
+            .forEach(item => this.send(item));
+    }
+
+    private send(item: Uq.Item) {
+        const { id, file, url } = item;
+
+        // Prepare the XHR:
+        const xhr = new XMLHttpRequest();
+
+        xhr.open('POST', url);
+
+        xhr.responseType = 'arraybuffer';
+
+        // Set up event handlers:
+        const onprogress = ({ total, loaded }: ProgressEvent) => {
+            const progress = calculateProgress(total, loaded);
+
+            this.update(id, item => ({
+                ...item,
+                progress,
+                total,
+                loaded,
+            }));
+
+            this.triggerChange();
+            this.dispatchEvent(new Uq.UqProgressEvent(this.find(id)!));
+        };
+
+        const onfinish = (status: Uq.Status) => {
+            xhr.upload.removeEventListener('progress', onprogress);
+            xhr.removeEventListener('load', onload);
+            xhr.removeEventListener('error', onerror);
+            xhr.removeEventListener('abort', onabort);
+
+            // Update status and flush state:
+            const unfinished = this.items.filter(filterUnfinished);
+            const flushed = unfinished.length <= 1;
+
+            let response: Response;
+
+            if (status === Uq.Status.Done && this.onResponse) {
+                response = new Response(xhr.response, {
+                    status: xhr.status,
+                    statusText: xhr.statusText,
+                    headers: parseHeaders(xhr),
+                });
+
+                const processed = this.onResponse(response);
+
+                if (processed[0] === Uq.Status.Error) {
+                    status = Uq.Status.Error;
+                } else {
+                    response = processed[1] as any;
+                }
+            }
+
+            this.map(item => {
+                if (item.id !== id) {
+                    if (flushed && !item.flushed) {
+                        return { ...item, flushed };
+                    } else {
+                        return item;
+                    }
+                } else {
+                    return {
+                        ...item,
+                        status,
+                        flushed: Boolean(status & Uq.Status.Failed) || flushed,
+                        xhr: null,
+                        onprogress: null,
+                        onload: null,
+                        onerror: null,
+                        onabort: null,
+                    };
+                }
+            });
+
+            // Trigger events:
+            this.triggerChange();
+
+            const item = this.find(id)!;
+
+            if (status === Uq.Status.Done) {
+                this.dispatchEvent(new Uq.UqDoneEvent(item, response!));
+            } else if (status === Uq.Status.Error) {
+                this.dispatchEvent(new Uq.UqErrorEvent(item));
+            } else {
+                this.dispatchEvent(new Uq.UqAbortEvent(item));
+            }
+
+            this.dispatchEvent(new Uq.UqFinishEvent(item));
+
+            // Trigger iteration:
+            this.tick();
+        };
+
+        const onload = () => {
+            onfinish(Uq.Status.Done);
+        };
+
+        const onerror = () => {
+            onfinish(Uq.Status.Error);
+        };
+
+        const onabort = () => {
+            onfinish(Uq.Status.Aborted);
+        };
+
+        xhr.upload.addEventListener('progress', onprogress);
+        xhr.addEventListener('load', onload);
+        xhr.addEventListener('error', onerror);
+        xhr.addEventListener('abort', onabort);
+
+        // Build and send form data:
+        const body = new FormData();
+
+        body.append(this.field, file);
+
+        xhr.send(body);
+
+        // Update item status and private properties:
+        this.update(id, item => ({
+            ...item,
+            status: Uq.Status.Ongoing,
+            xhr,
+            onprogress,
+            onload,
+            onerror,
+            onabort,
+        }));
+
+        // Trigger the `change` event:
+        this.triggerChange();
     }
 
     addEventListener<t extends keyof Uq.EventMap>(t: t, h: (this: Uq, _: Uq.EventMap[t]) => any, o?: boolean | AddEventListenerOptions): void;
@@ -454,12 +365,26 @@ export namespace Uq {
          * Current progress.
          */
         readonly progress: number;
+
+        /**
+         * Target URL.
+         */
+        readonly url: string;
+
+        readonly flushed: boolean;
+        readonly total: number;
+        readonly loaded: number;
+        readonly xhr: XMLHttpRequest | null;
+        readonly onprogress: { (event: ProgressEvent): void } | null;
+        readonly onload: { (): void } | null;
+        readonly onerror: { (): void } | null;
+        readonly onabort: { (): void } | null;
     }
 
     /**
      * Upload queue change event. Triggers at each change of any internal value.
      */
-    export class ChangeEvent extends Event {
+    export class UqChangeEvent extends Event {
         /**
          * Current upload items list.
          */
@@ -487,7 +412,7 @@ export namespace Uq {
     /**
      * Upload item progress event.
      */
-    export class ProgressEvent extends Event {
+    export class UqProgressEvent extends Event {
         /**
          * An item just progressed.
          */
@@ -503,7 +428,7 @@ export namespace Uq {
     /**
      * Upload item success event.
      */
-    export class DoneEvent<r = Response> extends Event {
+    export class UqDoneEvent<r = Response> extends Event {
         /**
          * An item just completed.
          */
@@ -525,7 +450,7 @@ export namespace Uq {
     /**
      * Upload item error event. Triggers on network errors etc.
      */
-    export class ErrorEvent extends Event {
+    export class UqErrorEvent extends Event {
         /**
          * An item just errored.
          */
@@ -541,7 +466,7 @@ export namespace Uq {
     /**
      * Upload item abort event. Triggers when user aborts upload.
      */
-    export class AbortEvent extends Event {
+    export class UqAbortEvent extends Event {
         /**
          * An item just aborted.
          */
@@ -557,7 +482,7 @@ export namespace Uq {
     /**
      * Upload item finish event. Trigger after `done`, `error`, `abort`.
      */
-    export class FinishEvent extends Event {
+    export class UqFinishEvent extends Event {
         /**
          * An item just finished.
          */
@@ -571,12 +496,12 @@ export namespace Uq {
     }
 
     export interface EventMap {
-        readonly change: Uq.ChangeEvent;
-        readonly progress: Uq.ProgressEvent;
-        readonly done: Uq.DoneEvent;
-        readonly error: Uq.ErrorEvent;
-        readonly abort: Uq.AbortEvent;
-        readonly finish: Uq.FinishEvent;
+        readonly change: Uq.UqChangeEvent;
+        readonly progress: Uq.UqProgressEvent;
+        readonly done: Uq.UqDoneEvent;
+        readonly error: Uq.UqErrorEvent;
+        readonly abort: Uq.UqAbortEvent;
+        readonly finish: Uq.UqFinishEvent;
     }
 
     /**
@@ -601,34 +526,21 @@ export namespace Uq {
 }
 
 /**
- * Takes UQ options, returns a tuple of current state values (`items`, `progress`, `active`), pre-configured file change handler, and the UQ instance.
+ * Takes UQ options, returns a tuple of current state values (`items`, `progress`, `active`) and the UQ instance.
  */
-export function useUq<r = Response>(url: string | null, options = {} as Uq.Options<r>) {
+export function useUq<r = Response>(options = {} as Uq.Options<r>) {
     const { field, concurrency, onResponse } = options;
 
-    const uq = useMemo(() => {
-        return url === null ? null : new Uq(url, { field, concurrency, onResponse });
-    }, [url, field, concurrency, onResponse]);
+    const uq = useMemo(() => new Uq({ field, concurrency, onResponse }), [field, concurrency, onResponse]);
 
     const [items, setItems] = useState<readonly Uq.Item[]>([]);
     const [progress, setProgress] = useState(0);
     const [active, setActive] = useState(false);
 
-    const handleChange = useCallback(
-        (event: ChangeEvent) => {
-            if (!uq) return;
-
-            const input = event.target as HTMLInputElement;
-
-            uq.push(input.files);
-        },
-        [uq],
-    );
-
     useEffect(() => {
         if (!uq) return;
 
-        const handleChange = ({ items, progress, active }: Uq.ChangeEvent) => {
+        const handleChange = ({ items, progress, active }: Uq.UqChangeEvent) => {
             setItems(items);
             setProgress(progress);
             setActive(active);
@@ -641,5 +553,5 @@ export function useUq<r = Response>(url: string | null, options = {} as Uq.Optio
         };
     }, [uq]);
 
-    return [items, progress, active, handleChange, uq] as const;
+    return [items, progress, active, uq] as const;
 }
