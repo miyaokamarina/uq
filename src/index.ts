@@ -6,7 +6,7 @@ import { useMemo, useState, useEffect } from 'react';
 
 // region Private helpers
 const parseHeader = (src: string) => {
-    const match = /^(.*):\s*(.*?)\s*$/.exec(src);
+    const match = /^(.*?):\s*(.*?)\s*$/.exec(src);
 
     if (!match) return null!;
 
