@@ -292,11 +292,9 @@ export class Uq<r = Response> extends EventTarget {
         xhr.addEventListener('abort', onabort);
 
         // Build and send form data:
-        const body = new FormData();
+        xhr.setRequestHeader('content-disposition', `attachment; filename=${encodeURI(file.name)}`);
 
-        body.append(this.field, file);
-
-        xhr.send(body);
+        xhr.send(file);
 
         // Update item status and private properties:
         this.update(id, item => ({
