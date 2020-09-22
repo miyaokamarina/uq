@@ -48,16 +48,14 @@ const filterPending = (item: Uq.Item) => item.status === Uq.Status.Pending;
 export class Uq<r = Response> extends EventTarget {
     private items: readonly Uq.Item[] = [];
 
-    private readonly field: string;
     private readonly concurrency: number;
     private readonly onResponse?: (_: Response) => readonly [Uq.Status.Done, r] | readonly [Uq.Status.Error, unknown?];
 
     constructor(options = {} as Uq.Options<r>) {
         super();
 
-        const { field = 'file', concurrency = 4, onResponse } = options;
+        const { concurrency = 4, onResponse } = options;
 
-        this.field = field;
         this.concurrency = concurrency;
         this.onResponse = onResponse;
     }
@@ -507,11 +505,6 @@ export namespace Uq {
      */
     export interface Options<r = Response> {
         /**
-         * Upload `FormData` field name. Defaults to `'file'`.
-         */
-        readonly field?: string;
-
-        /**
          * Maximum number of simultaneous uploads. Defaults to `4`.
          */
         readonly concurrency?: number;
@@ -527,9 +520,9 @@ export namespace Uq {
  * Takes UQ options, returns a tuple of current state values (`items`, `progress`, `active`) and the UQ instance.
  */
 export function useUq<r = Response>(options = {} as Uq.Options<r>) {
-    const { field, concurrency, onResponse } = options;
+    const { concurrency, onResponse } = options;
 
-    const uq = useMemo(() => new Uq({ field, concurrency, onResponse }), [field, concurrency, onResponse]);
+    const uq = useMemo(() => new Uq({ concurrency, onResponse }), [concurrency, onResponse]);
 
     const [items, setItems] = useState<readonly Uq.Item[]>([]);
     const [progress, setProgress] = useState(0);

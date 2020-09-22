@@ -11,7 +11,7 @@
         "build": "./build.sh",
         "demo": "concurrently 'webpack-dev-server --mode development' 'node ./src/demo/server.js'"
     },
-    "dependencies": {
+    "peerDependencies": {
         "core-js": "^3.6.5",
         "react": "^16.13.1"
     },
@@ -26,6 +26,7 @@
         "concurrently": "^5.3.0",
         "html-webpack-plugin": "^4.4.1",
         "prettier": "^2.1.1",
+        "react": "^16.13.1",
         "react-dom": "^16.13.1",
         "source-map-loader": "^1.1.0",
         "ts-loader": "^8.0.3",

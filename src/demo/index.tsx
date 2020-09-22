@@ -39,7 +39,7 @@ const Actions = ({ uq, id, status }: { readonly uq: Uq; readonly id: number; rea
 };
 
 const App = () => {
-    const [items, progress, active, handleChange, uq] = useUq('http://127.0.0.1:12310/');
+    const [items, progress, active, uq] = useUq({ concurrency: 1 });
 
     return (
         <section>
@@ -48,7 +48,17 @@ const App = () => {
                 <Progress active={active} progress={progress} />
             </div>
             <div>
-                <input type='file' multiple onChange={handleChange} />
+                <input
+                    type='file'
+                    multiple
+                    onChange={({ target }) => {
+                        if (!target.files) return;
+
+                        for (const file of target.files) {
+                            uq.push(file, 'http://localhost:1488/');
+                        }
+                    }}
+                />
             </div>
             <table>
                 <thead>
