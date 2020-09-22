@@ -290,7 +290,7 @@ export class Uq<r = Response> extends EventTarget {
         xhr.addEventListener('abort', onabort);
 
         // Build and send form data:
-        xhr.setRequestHeader('content-disposition', `attachment; filename=${encodeURI(file.name)}`);
+        xhr.setRequestHeader('content-disposition', `attachment; filename="${encodeURI(file.name)}"`);
 
         xhr.send(file);
 
