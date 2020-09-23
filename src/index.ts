@@ -45,11 +45,11 @@ const filterPending = (item: Uq.Item) => item.status === Uq.Status.Pending;
 /**
  * File upload queue on steroids.
  */
-export class Uq<r = Response> extends EventTarget {
+export class Uq<r = Uq.Response> extends EventTarget {
     private items: readonly Uq.Item[] = [];
 
     private readonly concurrency: number;
-    private readonly onResponse?: (_: Response) => readonly [Uq.Status.Done, r] | readonly [Uq.Status.Error, unknown?];
+    private readonly onResponse?: (_: Uq.Response) => readonly [Uq.Status.Done, r] | readonly [Uq.Status.Error, unknown?];
 
     constructor(options = {} as Uq.Options<r>) {
         super();
@@ -214,19 +214,21 @@ export class Uq<r = Response> extends EventTarget {
             const unfinished = this.items.filter(filterUnfinished);
             const flushed = unfinished.length <= 1;
 
-            let response: Response;
+            let response: Uq.Response;
+            let error: any;
 
             if (status === Uq.Status.Done && this.onResponse) {
-                response = new Response(xhr.response, {
+                response = {
+                    body: xhr.response,
                     status: xhr.status,
-                    statusText: xhr.statusText,
                     headers: parseHeaders(xhr),
-                });
+                };
 
                 const processed = this.onResponse(response);
 
                 if (processed[0] === Uq.Status.Error) {
                     status = Uq.Status.Error;
+                    error = processed[1];
                 } else {
                     response = processed[1] as any;
                 }
@@ -261,7 +263,7 @@ export class Uq<r = Response> extends EventTarget {
             if (status === Uq.Status.Done) {
                 this.dispatchEvent(new Uq.UqDoneEvent(item, response!));
             } else if (status === Uq.Status.Error) {
-                this.dispatchEvent(new Uq.UqErrorEvent(item));
+                this.dispatchEvent(new Uq.UqErrorEvent(item, error));
             } else {
                 this.dispatchEvent(new Uq.UqAbortEvent(item));
             }
@@ -309,13 +311,13 @@ export class Uq<r = Response> extends EventTarget {
         this.triggerChange();
     }
 
-    addEventListener<t extends keyof Uq.EventMap>(t: t, h: (this: Uq, _: Uq.EventMap[t]) => any, o?: boolean | AddEventListenerOptions): void;
+    addEventListener<t extends keyof Uq.EventMap<r>>(t: t, h: (this: Uq, _: Uq.EventMap<r>[t]) => any, o?: boolean | AddEventListenerOptions): void;
     addEventListener(t: string, h: EventListenerOrEventListenerObject | null, o?: boolean | AddEventListenerOptions): void;
     addEventListener(t: string, h: EventListenerOrEventListenerObject | null, o?: boolean | AddEventListenerOptions): void {
         super.addEventListener(t, h, o);
     }
 
-    removeEventListener<t extends keyof Uq.EventMap>(t: t, h: (this: Uq, _: Uq.EventMap[t]) => any, o?: boolean | AddEventListenerOptions): void;
+    removeEventListener<t extends keyof Uq.EventMap<r>>(t: t, h: (this: Uq, _: Uq.EventMap<r>[t]) => any, o?: boolean | AddEventListenerOptions): void;
     removeEventListener(t: string, h: EventListenerOrEventListenerObject, o?: boolean | AddEventListenerOptions): void;
     removeEventListener(t: string, h: EventListenerOrEventListenerObject, o?: boolean | AddEventListenerOptions): void {
         super.removeEventListener(t, h, o);
@@ -424,7 +426,7 @@ export namespace Uq {
     /**
      * Upload item success event.
      */
-    export class UqDoneEvent<r = Response> extends Event {
+    export class UqDoneEvent<r = Uq.Response> extends Event {
         /**
          * An item just completed.
          */
@@ -452,10 +454,16 @@ export namespace Uq {
          */
         readonly item: Uq.Item;
 
-        constructor(item: Uq.Item) {
+        /**
+         * Received error.
+         */
+        readonly error: any;
+
+        constructor(item: Uq.Item, error: any) {
             super('error');
 
             this.item = item;
+            this.error = error;
         }
     }
 
@@ -491,10 +499,10 @@ export namespace Uq {
         }
     }
 
-    export interface EventMap {
+    export interface EventMap<r = Uq.Response> {
         readonly change: Uq.UqChangeEvent;
         readonly progress: Uq.UqProgressEvent;
-        readonly done: Uq.UqDoneEvent;
+        readonly done: Uq.UqDoneEvent<r>;
         readonly error: Uq.UqErrorEvent;
         readonly abort: Uq.UqAbortEvent;
         readonly finish: Uq.UqFinishEvent;
@@ -503,7 +511,7 @@ export namespace Uq {
     /**
      * Uq options insterface.
      */
-    export interface Options<r = Response> {
+    export interface Options<r = Uq.Response> {
         /**
          * Maximum number of simultaneous uploads. Defaults to `4`.
          */
@@ -512,14 +520,20 @@ export namespace Uq {
         /**
          * Response handler allowing to transform erroneous “successful” result into errors.
          */
-        readonly onResponse?: (_: Response) => readonly [Uq.Status.Done, r] | readonly [Uq.Status.Error, unknown?];
+        readonly onResponse?: (_: Uq.Response) => readonly [Uq.Status.Done, r] | readonly [Uq.Status.Error, unknown?];
+    }
+
+    export interface Response {
+        readonly body: ArrayBuffer | null | undefined;
+        readonly status: number;
+        readonly headers: Headers;
     }
 }
 
 /**
  * Takes UQ options, returns a tuple of current state values (`items`, `progress`, `active`) and the UQ instance.
  */
-export function useUq<r = Response>(options = {} as Uq.Options<r>) {
+export function useUq<r = Uq.Response>(options = {} as Uq.Options<r>) {
     const { concurrency, onResponse } = options;
 
     const uq = useMemo(() => new Uq({ concurrency, onResponse }), [concurrency, onResponse]);
